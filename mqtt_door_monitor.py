@@ -10,16 +10,40 @@ from gpiozero import Button
 from signal import pause
 import paho.mqtt.client as mqtt
 import time
+import argparse
+import socket
 
 ### Constants ###
-LOG_DIR = '/home/pi/Documents/log_files/'
 BASE_FILENAME = 'unit_log'
 UNIT_TIME_STANDARD = 500
+EMPTY_ROTATION = 2
 TIME_STANDARD_TOLERANCE = 10
 OVER_TIME_STANARD_BAND_1 = 300
 OVER_TIME_STANARD_BAND_2 = 1800
 OVER_TIME_STANARD_BAND_3 = 3600
-BROKER_NAME = 'raspberrypi'
+BROKER_NAME = '192.168.0.100'
+
+# Parse command line arguements
+parser = argparse.ArgumentParser()
+parser.add_argument('-d','--directory',action='store',default='/home/mark/log_files/',\
+                    help='Provide the directory to store the results locally',\
+                    dest='directory')
+parser.add_argument('-b','--broker',action='store',default='192.168.0.100', \
+                    help='Provide the MQTT Broker Name',\
+                    dest='broker')
+parser.add_argument('-t','--topic',action='store',default='/machines/test',\
+                    help='Provide the topic to publish to',\
+                    dest='topic')
+parser.add_argument('-c','--client',action='store',default='machine-test',\
+                    help='Provide a name for the mqtt client',\
+                    dest='client')
+#extact results
+results=parser.parse_args()
+
+log_dir = results.directory
+broker_name = results.broker
+topic = results.topic
+
 
 #unit counter variable
 unit_count = 0
@@ -37,7 +61,7 @@ def createRow(count,curr_time, time_diff,auto_time_class):
     return unit_entry
 
 def writeRowToFile(filename, row):
-    """This function will wtite a list as a csv row to
+    """This function will write a list as a csv row to
         file unit_log.csv in the wordking dir"""
     try:
         with open(filename,'a',newline='') as f:
@@ -73,30 +97,34 @@ def calc_auto_time_class(time_diff):
     #if the difference is 0 ignore the value
     if(seconds == 0):
         auto_time = -1
+    #If the time recorded was under a minute it is likely
+    #That the table is being rotated empty and should be ignored
+    elif(seconds < EMPTY_ROTATION):
+        auto_time = 0
     #If unit was under time standard
     elif(seconds < UNIT_TIME_STANDARD - TIME_STANDARD_TOLERANCE):
-        auto_time = 0
+        auto_time = 1
     #If unit was within ts tolerance
     elif(seconds < UNIT_TIME_STANDARD + TIME_STANDARD_TOLERANCE):
-         auto_time = 1
+         auto_time = 2
     #if there was a delay of BAND 1
     elif(seconds < OVER_TIME_STANARD_BAND_1):
-        auto_time = 2
+        auto_time = 3
     #if there was a delay of BAND 2
     elif(seconds < OVER_TIME_STANARD_BAND_2):
-        auto_time = 3
+        auto_time = 4
     #if there was a delay of BAND 3
     elif(seconds < OVER_TIME_STANARD_BAND_3):
-        auto_time = 4
+        auto_time = 5
     #If a larger delay than BAND3
     else:
-        auto_time = 5
+        auto_time = 6
     return auto_time
 
 
 def log_unit():
     curr_time=datetime.utcnow()                 # get the current time
-    filename = "{}{}_{}.csv".format(LOG_DIR,BASE_FILENAME,curr_time.date())
+    filename = "{}{}_{}.csv".format(log_dir,BASE_FILENAME,curr_time.date())
 
     unit_count_local = 0
     # Check that a file exists for todays date
@@ -111,38 +139,41 @@ def log_unit():
         last_unit_time = curr_time
         time_diff = curr_time - curr_time
 
-    print("Unit {} Completed".format(unit_count_local))
     #Label the unit with a time class
     #This class cateorises the units into how long it took
     #between units
     auto_time_class = calc_auto_time_class(time_diff)
-
-    # Check the date, if new day create new csv file
-    #if last_unit_time.date != curr_time.date:
-    #    # create new csv
-    #    filename = "Unit_Log_{}.csv".format(curr_time.date)
-
-    unit_entry = createRow(unit_count_local,curr_time,time_diff,auto_time_class)   
-    writeRowToFile(filename,unit_entry)
-    mqtt_client_publish(client,str(unit_entry))
+    
+    # Save the info and publish to mqqt broker
+    # If the time class is negative don't save the unit
+    if(auto_time_class != 0):
+        unit_entry = createRow(unit_count_local,curr_time,time_diff,auto_time_class)   
+        writeRowToFile(filename,unit_entry)
+        print("Unit {} Completed".format(unit_count_local))
+        mqtt_client_publish(client,str(unit_entry))    
+    else:
+        print("Table Rotation: Ignoring Trigger")
     return
 
 def mqtt_client_publish(client,data):
     print('connect to broker')
-    client.connect(BROKER_NAME)
-    client.loop_start()
-    print('Subscribing to the topic','test/message')
-    client.subscribe('test/message')
-    print('Publishing message to the topic','test/message')
-    client.publish('test/message',data)
-    time.sleep(1)
-    client.loop_stop()
+    try:
+        client.connect(broker_name)
+        client.loop_start()
+        print('Publishing message to the topic',topic)
+        client.publish(topic,data)
+        time.sleep(1)
+        client.loop_stop()
+    except socket.gaierror as e:
+        print("Error: Unable to connect to Broker Service")
+        print(e)
 
-while(True):
-    print('creating new instance')
-    client = mqtt.Client("P1")
-    door_switch.when_pressed = log_unit
-    print('connected')
-    # Wait for a GPIO input     
-    pause()
+if __name__ == '__main__':
+    while(True):
+        print('creating new instance')
+        client = mqtt.Client(results.client)
+        door_switch.when_pressed = log_unit
+        print('connected')
+        # Wait for a GPIO input     
+        pause()
     
