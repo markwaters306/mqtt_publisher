@@ -106,6 +106,26 @@ def calc_auto_time_class(time_diff):
     return auto_time
 
 def log_flame():
+    '''
+    This function logs when the status of the flame detector changes
+    it is called for when the sensor is actiavted and deactiavted
+    '''
+    curr_time=datetime.utcnow()                 # get the current time
+    # Create a file name for the door trigger log
+    filename = "{}{}_flame_{}.csv".format(log_dir,BASE_FILENAME,curr_time.date())
+    
+    #set the topic to publish to
+    flame_topic = '{}/flame'.format(topic)
+    
+    #Get the current state of the sensor
+    # True: flame on ; False: Flame off
+    flame_status = flame_sensor.is_active
+    
+    # Save the info and publish to mqqt broker
+    row_entry = createRowFlame(curr_time,flame_status)   
+    writeRowToFile(filename,row_entry)
+    print("Flame Status Change: {} ".format(flame_status))
+    mqtt_client_publish(client,flame_topic,str(row_entry))  
     
 
 def log_door():
@@ -233,6 +253,8 @@ if __name__ == '__main__':
             client = mqtt.Client(results.client)
             door_switch.when_pressed = log_door
             braze_feeder.when_pressed = log_braze
+            flame_sensor.when_activated =  log_flame
+            flame_sensor.when_deactivated = log_flame
             print('Connected')
             # Wait for a GPIO input     
             pause()
