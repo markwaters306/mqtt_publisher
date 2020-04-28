@@ -3,7 +3,7 @@ Description=MQTT Publisher
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 -u mqtt_door_monitor.py -t machines/machine-02 -c machine-02
+ExecStart=/usr/bin/python3 -u publisher_robot_brazer.py -t machines/machine-02 -c machine-02
 WorkingDirectory=/home/mark/mqtt_publisher
 StandardOutput=inherit
 StandardError=inherit
