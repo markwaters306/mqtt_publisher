@@ -225,6 +225,7 @@ if __name__ == '__main__':
     # Init the input trigger
     door_switch = Button(2)
     braze_feeder = Button(4)
+    flame_sensor = Button(27)
 
     if __name__ == '__main__':
         while(True):
